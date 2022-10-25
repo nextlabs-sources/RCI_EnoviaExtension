@@ -1,0 +1,112 @@
+<!-- build_xlib.xml
+
+Description:
+	This ANT script constructs <project root>/xlib.
+
+	To use this script, you must update properties is <project root>/scripts/build.properties or overide 
+	them from commandline (using -D option). For example:
+		
+		set PATH=C:\depot\external\apache-ant\apache-ant-1.8.4\bin;%PATH%
+		ant -XX:MaxPermSize=512m -Dnlbuildroot=C:/depot/PolicyStudio/dev/BuildScript_1205 -Dexternal.dir=c:/depot/external -Dnlexternaldir=c:/depot/external -f scripts/build_xlib.xml
+		
+	or
+		
+		set PATH=C:\depot\external\apache-ant\apache-ant-1.8.4\bin;%PATH%
+		set ANT_OPTS=-XX:MaxPermSize=512m -Dnlbuildroot=%NLBUILDROOT% -Dexternal.dir=%NLEXTERNALDIR% -Dnlexternaldir=%NLEXTERNALDIR% 
+		ant -f scripts/build_xlib.xml -v	
+-->
+
+<project name="build_xlib" default="all" basedir=".">
+	<!-- Debug 
+	<echoproperties />
+	<fail message="INFO: Debug" />
+	-->
+	
+	<!-- Property files -->
+	<property file="${basedir}/build.properties" />
+	
+	<!-- Global properties -->
+	<property name="xlib_dir" location="${nlbuildroot}/xlib" />
+	<property name="xlib_jar_dir" value="${xlib_dir}/jar" />
+	<property name="lib_dir" location="${nlbuildroot}/lib" />
+	<property name="lib_jar_dir" location="${lib_dir}/jar" />
+	<!--<property name="java_sdk_dir" location="${xlib_jar_dir}/nljavasdk2/jservice" />-->
+	
+	<!-- TBD: psexternaldir is a temporary variable. It will be removed with all files 
+		under lib are extracted automatically from build artifacts. -->
+	<!--<property name="psexternaldir" location="${nlbuildroot}/lib" />-->
+
+	<!-- Dump properties -->
+	<echoproperties />
+
+	<echo message="INFO: Dump properties completed" />
+	
+	<!-- Sanity checks -->
+	<fail message="nlbuildroot is not set" unless="nlbuildroot" />
+	<fail message="nlbuildroot is empty">
+		<condition>
+			<equals arg1="${nlbuildroot}" arg2="" trim="true" />
+		</condition>
+	</fail>
+	<available file="${nlbuildroot}" type="dir" property="local.nlbuildroot_exists" />
+	<fail message="nlbuildroot directory does not exist - ${nlbuildroot}" unless="local.nlbuildroot_exists" />
+
+	<fail message="nlexternaldir is not set" unless="nlexternaldir" />
+	<fail message="nlexternaldir is empty">
+		<condition>
+			<equals arg1="${nlexternaldir}" arg2="" trim="true" />
+		</condition>
+	</fail>
+	<available file="${nlexternaldir}" type="dir" property="local.nlexternaldir_exists" />
+	<fail message="nlexternaldir directory does not exist - ${nlexternaldir}" unless="local.nlexternaldir_exists" />
+
+	<fail message="xlib_policy_adaptor_sdk_zip_file is not set" unless="xlib_policy_adaptor_sdk_zip_file" />
+	<fail message="xlib_policy_adaptor_sdk_zip_file is empty">
+		<condition>
+			<equals arg1="${xlib_policy_adaptor_sdk_zip_file}" arg2="" trim="true" />
+		</condition>
+	</fail>
+	<available file="${xlib_policy_adaptor_sdk_zip_file}" type="file" property="local.sdk_zip_file_exists" />
+	<fail message="xlib_policy_adaptor_sdk_zip_file directory does not exist - ${xlib_policy_adaptor_sdk_zip_file}" unless="local.sdk_zip_file_exists" />
+	
+	<fail message="java_sdk_artifacts_bin_zip_file is not set" unless="java_sdk_artifacts_bin_zip_file" />
+	<fail message="java_sdk_artifacts_bin_zip_file is empty">
+		<condition>
+			<equals arg1="${java_sdk_artifacts_bin_zip_file}" arg2="" trim="true" />
+		</condition>
+	</fail>
+	<available file="${java_sdk_artifacts_bin_zip_file}" type="file" property="local.sdk_zip_file_exists" />
+	<fail message="java_sdk_artifacts_bin_zip_file directory does not exist - ${java_sdk_artifacts_bin_zip_file}" unless="local.sdk_zip_file_exists" />
+
+	<echo message="INFO: Sanity check completed (no error)" />
+
+	<!-- Targets -->
+	<!--<target name="all" depends="clean, prepare_external_jar,prepare_enovia_jar, prepare_sdk_jar" />-->
+	<target name="all" depends="clean, prepare_external_jar, prepare_enovia_jar" />
+
+	<target name="prepare_external_jar">
+		<mkdir dir="${xlib_jar_dir}" />
+		<!--<copy file="${nlexternaldir}/commons-lang/commons-lang-2.6/commons-lang-2.6.jar" todir="${xlib_jar_dir}" preservelastmodified="true" overwrite="false" verbose="true" />
+		<copy file="${nlexternaldir}/commons-configuration/commons-configuration-1.8/commons-configuration-1.8.jar" todir="${xlib_jar_dir}" preservelastmodified="true" overwrite="false" verbose="true" />
+		<copy file="${nlexternaldir}/commons-logging/commons-logging-1.1.1/commons-logging-1.1.1.jar" todir="${xlib_jar_dir}" preservelastmodified="true" overwrite="false" verbose="true" />
+		<copy file="${nlexternaldir}/ehcache/ehcache-2.5.2/lib/ehcache-core-2.5.2.jar" todir="${xlib_jar_dir}" preservelastmodified="true" overwrite="false" verbose="true" />-->
+		<copy file="${nlexternaldir}/log4j/apache-log4j-1.2.16/log4j-1.2.16.jar" todir="${xlib_jar_dir}" preservelastmodified="true" overwrite="false" verbose="true" />
+		<!--<copy file="${nlexternaldir}/ehcache/ehcache-2.5.2/lib/slf4j-api-1.6.1.jar" todir="${xlib_jar_dir}" preservelastmodified="true" overwrite="false" verbose="true" />
+		<copy file="${nlexternaldir}/ehcache/ehcache-2.5.2/lib/slf4j-jdk14-1.6.1.jar" todir="${xlib_jar_dir}" preservelastmodified="true" overwrite="false" verbose="true" />-->
+	</target>
+	
+	<target name="prepare_enovia_jar">
+		<copy file="${nlexternaldir}/enovia/enoviav6r2009/domain.jar" todir="${xlib_jar_dir}" preservelastmodified="true" overwrite="false" verbose="true" />
+		<copy file="${nlexternaldir}/enovia/enoviav6r2009/eMatrixServletRMI.jar" todir="${xlib_jar_dir}" preservelastmodified="true" overwrite="false" verbose="true" />
+		<!--<copy file="C:/Users/clow@nextlabs.com/workspace/Rockwell/build/rockwell.jar" todir="${xlib_jar_dir}" preservelastmodified="true" overwrite="false" verbose="true" />-->
+		<copy file="${lib_jar_dir}/ClassificationRepositoryAPI.jar" todir="${xlib_jar_dir}" preservelastmodified="true" overwrite="false" verbose="true" />
+		<copy file="${lib_jar_dir}/rcEICUtils.jar" todir="${xlib_jar_dir}" preservelastmodified="true" overwrite="false" verbose="true" />
+		<copy file="${lib_jar_dir}/nextlabs-enovia-em.jar" todir="${xlib_jar_dir}" preservelastmodified="true" overwrite="false" verbose="true" />
+		<!--<copy file="${nlexternaldir}/enovia/enoviav6r2009/engineering.jar" todir="${xlib_jar_dir}" preservelastmodified="true" overwrite="false" verbose="true" />-->
+	</target>
+
+	<target name="clean">
+		<delete dir="${xlib_dir}" />
+	</target>
+</project>
+

@@ -1,0 +1,56 @@
+#!/bin/bash
+#
+# DESCRIPTION
+#	Invoke custom application build script
+#
+# USAGE:
+#	Steps to invoke this script.
+#		export NLEXTERNALDIR=<path>
+#		export NLPROFSERVDIR=<path>
+#		export BUILD_NUMBER=<#>
+#		source setEnv
+#		./buildDev
+#
+# HUDSON BUILD:
+#	cd $WORKSPACE
+#	export NLEXTERNALDIR=c:/hudson/jobs/external_latest/workspace
+#	export NLPROFSERVDIR=c:/depot/ProfessionServices/buildCommon
+#	source setEnv
+#	./buildDev
+
+
+#
+# Check for errors
+#
+
+if [ ! -d ./xlib ]; then
+	echo "### ERROR: Missing xlib directory ./xlib"
+	exit 1
+fi
+
+
+#
+# Compile
+#
+
+LOG_FILE=buildDev.log
+
+(
+set -x
+export PATH=$PATH:$(cygpath -u "$NLEXTERNALDIR")/apache-ant/apache-ant-1.7.0/bin
+
+# Prepare environment
+./configure || exit $?
+source build.config
+
+# Compile code and build installers
+if [ "$BUILDTYPE" == "debug" ]; then
+	make -f build/Makefile.compile compile
+else
+	make -f build/Makefile.compile
+fi
+$NLPROFSERVDIR/buildCommon/checkBuildLog.pl $LOG_FILE || exit $?
+set +x
+) 2>&1 | tee $LOG_FILE
+
+exit ${PIPESTATUS[0]}

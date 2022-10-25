@@ -1,0 +1,415 @@
+#!/bin/bash
+#
+# DESCRIPTION
+#	The purpose of configure is to setup Bash shell variables to be used to build a
+#	project.
+#
+# OBJECTIVES
+#	1. configure should centrallize all variables need to be change to build a new version
+#		of this project (we are not able to achieve tis yet)
+#	2. configure should specify variables that are used in Makefile, Bash script or Perl script
+#		so that values used in these scripts will always be consistent
+#	3. configure should make build parameters explicit so it is easy to understand and change.
+#	4. configure does not set shell variables directly. Instead, it generates a build.config
+#		script that can be sourced to set shell variables (i.e., source build.config). The
+#		goal is make it easy to override any setting temporary by editing build.config.
+#	5. In case of automated build error, you can fix an error and rebuild and be certain that
+#		the result will be the same as automated build. Since automated build will left behind
+#		a build.config file. All you need to do is the following and the code will be compiled
+#		with the right compile flags, binaries stamped with correct version and build #s.
+#			a) Go to root directory of a build tree
+#			b) Run "source setEnv"
+#			c) Run "source build.config"
+#			d) Go to a directory that needs to be rebuild
+#			e) Run "make $MAKE_CFLAGS_32
+#
+#
+# USAGE
+#	This script must be run from the root of a source tree where this script is located. It
+#	must be run after sourcing setEnv. Also, if it is run manually with --type=release from 
+#	a Bash shell, you need to specify BUILD_NUMBER which is normally supplied by Hudson.
+#		export BUILD_NUMBER=10001
+#
+#	configure supports remapping the root directory to a drive letter. This must be done in
+#	concert with a change in setEnv to map a drive. In addition, the drive must not be used
+#	by another project on the same machine at the same time. Otherwise, two build project
+#	will interfere with each other and result in strange build errors. The only time you may
+#	want to remap build root to a drive letter is because a path is longer than 256 characters.
+#	When a path is too long, InstallShield or Cygwin may fail with strange error.
+#
+#	See printUsage() for more details.
+#
+# NOTES
+#	Hudson specific
+#		1. When bash script is run from Hudson, the output string of $(hostname), $(whoami) 
+#			is return with a trailing '\r'. Use tr to remove the trailing '\r' 
+#			($(hostname | tr -d "\r")).
+#
+#	No PCV option
+#		1. Custom project are normally simple. The is no point in creating PCV build. Also, 
+#			we do not maintain a mainline branch for such project in Perforce. We work on 
+#			a release branch directly. That also makes it easier to locate changelist for 
+#			each revision.
+#
+#	Two types of custom projects
+#		1. Generic
+#			This type of projects are delivered to more than one customer. They are found
+#			in Perforce under //depot/ProfessionalServices/<project-name>/<revision>
+#			(e.g., S:\build\custom\StripAttachment\5.2.0.0\3\StripAttachment-32-5.2.0.0-3-Tyco-base-oe5.5.6-20110912.zip).
+#		2. Customer specific
+#			This type of projects is tailored to a specific custom's environment and will
+#			not be deployed by another customer. They can be found in Perforce under
+#			//depot/ProfessionalServices/<customer>/<project-name>/<revision>
+#			(e.g., S:\build\custom\KLA\EncryptionCreate\1.0.0.0\1).
+#
+#	xlib content
+#		1. Use of xlib is slightly different between a custom project and a product project.
+#			Custom xlib contains both external dependencies required to build a project as
+#			well as dependencies required to build an install package (normally a zip file).
+#			Doing so allow a custom project to be rebuilt easily by backing up a xlib during
+#			the publishing phrase.
+#		2. xlib content should be published in the same directory as install package with
+#			name such as StripAttachment-5.2.0.0-3-20110912-xlib.zip.
+#
+#	Publishing of a build
+#		1. Custom project is typically published to S:/build/custom. 
+#		2. If a project is generic, it should be published to 
+#			S:/build/custom/<project-name>/<revision>/<build-#>. 
+#		3. If a project is customer specific, it is published to
+#			S:/build/custom/<customer>/<project-name>/<revision>/<build-#>.
+#		4. The install package of a build is published as a zip file. Since there are a large
+#			variety of custom projects and sometimes multiple custom projects are delivered
+#			in one installer, installer is generally build separately. For example, you may 
+#			find s:/build/custom/Tyco/ClientObligations/2.0.0.0/11 contains scripts to build an
+#			installer that groups StripAttachment, ZipTagging and SAPTagging of various 
+#			versions.
+#		5. Typically the followings are published at the end of a build:
+#			- Install package
+#				<project-name>-<arch>-<version>-<build-#>-<customer>-<special-feature>-<date>.zip
+#				(e.g., StripAttachment-32-5.2.0.0-3-Tyco-base-oe5.5.6-20110912.zip)
+#			- Binaries with debug symbol files
+#				<project-name>-<arch>-<version>-<build-#>-<customer>-<special-feature>-bin-<date>.zip
+#				(e.g., StripAttachment-5.2.0.0-3-20110912-bin.zip).
+#			- xlib files that can be used to rebuild and repackage this project
+#				<project-name>-<arch>-<version>-<build-#>-<customer>-<special-feature>-xlib-<date>.zip
+#				(e.g., StripAttachment-5.2.0.0-3-20110912-xlib.zip).
+
+
+echo "NextLabs Custom Project Build Configuration Tool"
+echo "Specify --help for more information"
+
+
+#
+# Process commandline parameters
+#
+
+# ------------------------------
+# printUsage()
+
+function printUsage
+{
+	echo "usage: configure [--type=release|dev] [--mapBuildRoot=<drive-letter>]"
+	echo "  mapBuildRoot  Use short path for NLPROJECTROOT to avoid Cygwin and InstallShield"
+	echo "                path length limitation. Specify a drive letter that NLPROJECTROOT is"
+	echo "                mapped to (e.g., --mapBuildRoot=k). IMPORTANT: Beware that if you"
+	echo "                have two Hudson projects setup to use the same drive, you can"
+	echo "                potentially have one project changing drive mapping of another"
+	echo "                in the middle of a build and produce unpredictible result. In this"
+	echo "                case, you should use a different drive mapping for a second"
+	echo "                project."
+	echo "  type          Build configuration type. Default is dev. Valid values are:"
+	echo "                  release"
+	echo "                    BUILD_NUMBER must be specified"
+	echo "                    BUILDTYPE=release"
+	echo "                    PREFAST=0"
+	echo "                  dev"
+	echo "                    BUILD_NUMBER is generated by this script"
+	echo "                    BUILDTYPE=release|debug"
+	echo "                    PREFAST=0|1"
+	echo ""
+	echo "Environment variables used by this script include:"
+	echo "  BUILD_NUMBER=<#>          Valid only for --type=release. Otherwise, auto-generated."
+	echo "  BUILDTYPE=release|debug   Always release for --type=release"
+	echo "  NLEXTERNALDIR=<path>      Must be set by you"
+	echo "  NLPROFSERVDIR=<path>      Must be set by you"
+	echo "  NLPROJECTROOT=<path>      Will always be set to current directory"
+	echo "  PREFAST=0|1"
+}
+
+# Help
+if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
+	printUsage
+	exit 0
+fi
+
+# Parse arguements
+CONFIG_TYPE=dev
+MAP_BUILD_ROOT=
+
+while [ $# -gt 0 ]; do
+	if [ "${1%%=*}" == "--type" ]; then
+		CONFIG_TYPE=${1##*=}
+	elif [ "${1%%=*}" == "--mapBuildRoot" ]; then
+		MAP_BUILD_ROOT=${1##*=}
+	fi
+	
+	shift
+done
+
+# Check for errors
+if [ "$CONFIG_TYPE" != "release" ] &&  [ "$CONFIG_TYPE" != "dev" ]; then
+	echo "### ERROR: Invalid config type $CONFIG_TYPE"
+	exit 1
+fi
+
+# Print arguements
+echo "INFO: Parameters:"
+echo "  CONFIG_TYPE      = $CONFIG_TYPE"
+echo "  MAP_BUILD_ROOT   = $MAP_BUILD_ROOT"
+
+
+#
+# Check for errors
+#
+
+MAP_PATH=${MAP_BUILD_ROOT}:/
+NLEXTERNALDIR=`cygpath -m "$NLEXTERNALDIR"`
+NLPROFSERVDIR=`cygpath -m "$NLPROFSERVDIR"`
+
+if [ "$MAP_BUILD_ROOT" != "" ] && [ ! -d $MAP_PATH ]; then
+	echo "### ERROR: Invalid mapped build root $MAP_PATH"
+	exit 1
+fi
+
+if [ "$NLEXTERNALDIR" == "" ]; then
+	echo "### ERROR: Missing variable \$NLEXTERNALDIR"
+	exit 1
+fi
+
+if [ ! -d $NLEXTERNALDIR ]; then
+	echo "### ERROR: Missing external directory $NLEXTERNALDIR"
+	exit 1
+fi
+
+if [ "$NLPROFSERVDIR" == "" ]; then
+	echo "### ERROR: Missing variable \$NLPROFSERVDIR"
+	exit 1
+fi
+
+if [ ! -d $NLPROFSERVDIR ]; then
+	echo "### ERROR: Missing external directory $NLPROFSERVDIR"
+	exit 1
+fi
+
+if [ "$CONFIG_TYPE" == "release" ]; then
+#TBF: Should check if BUILD_NUMBER is numeric
+
+	if [ "$BUILD_NUMBER" == "" ] || [ $BUILD_NUMBER -eq 0 ]; then
+		echo "### ERROR: Missing or invalid \$BUILD_NUMBER"
+		exit 1
+	fi
+fi
+
+
+#
+# Prepare variables
+#
+
+# Set project root
+if [ "$MAP_BUILD_ROOT" == "" ]; then
+	NLPROJECTROOT=$(cygpath -m $(pwd) | tr -d "\r")
+else
+	NLPROJECTROOT=${MAP_BUILD_ROOT}:
+fi
+
+# Compiler variables
+if [ "$CONFIG_TYPE" == "release" ]; then
+	BUILDTYPE=release
+	PREFAST=0
+	OFFICIALCERT=1
+	VERSION_BUILD=$BUILD_NUMBER
+	VERSION_BUILD_SHORT=$BUILD_NUMBER
+	MAKE_CFLAGS_32="-k OFFICIALCERT=$OFFICIALCERT BUILDTYPE=$BUILDTYPE TARGETENVARCH=x86 PREFAST=$PREFAST VERSION_BUILD=$VERSION_BUILD"
+	MAKE_CFLAGS_64="-k OFFICIALCERT=$OFFICIALCERT BUILDTYPE=$BUILDTYPE TARGETENVARCH=x64 PREFAST=$PREFAST VERSION_BUILD=$VERSION_BUILD"
+	MAKE_CSFLAGS="-k OFFICIALCERT=$OFFICIALCERT BUILDTYPE=$BUILDTYPE PREFAST=$PREFAST VERSION_BUILD=$VERSION_BUILD"
+	MAKE_INSTALLFLAGS="-k OFFICIALCERT=$OFFICIALCERT BUILDTYPE=release VERSION_BUILD=$VERSION_BUILD"		
+else	
+	if [ "$BUILD_NUMBER" == "" ] || [ $BUILD_NUMBER -eq 0 ]; then
+		BUILD_NUMBER=10001
+	fi
+
+	if [ "$BUILDTYPE" == "" ] || [ "$BUILDTYPE" != "debug" ]; then
+		BUILDTYPE=release
+	fi
+	
+	if [ "$PREFAST" == "" ] || [ $PREFAST -ne 0 ]; then
+		PREFAST=1
+	fi
+
+	OFFICIALCERT=0
+	VERSION_BUILD_SHORT=${BUILD_NUMBER}DX_$(hostname | tr -d "\r")
+	VERSION_BUILD=$VERSION_BUILD_SHORT-$(whoami | tr -d "\r")-$(date +"%Y.%m.%d-%H:%M")
+	MAKE_CFLAGS_32="OFFICIALCERT=$OFFICIALCERT BUILDTYPE=$BUILDTYPE TARGETENVARCH=x86 PREFAST=$PREFAST VERSION_BUILD=$VERSION_BUILD"
+	MAKE_CFLAGS_64="OFFICIALCERT=$OFFICIALCERT BUILDTYPE=$BUILDTYPE TARGETENVARCH=x64 PREFAST=$PREFAST VERSION_BUILD=$VERSION_BUILD"
+	MAKE_CSFLAGS="OFFICIALCERT=$OFFICIALCERT BUILDTYPE=$BUILDTYPE PREFAST=$PREFAST VERSION_BUILD=$VERSION_BUILD"
+	MAKE_INSTALLFLAGS="OFFICIALCERT=$OFFICIALCERT BUILDTYPE=dev VERSION_BUILD=$VERSION_BUILD"
+fi
+
+# Project info
+CUSTOMER=RCI
+PROJECT_NAME=RCIEnoviaExtensions
+PACKAGE_NAME=RCI-Enovia-Extensions
+VERSION_PRODUCT="RCI Enovia Extensions"
+VERSION_MAJOR=1
+VERSION_MINOR=0
+VERSION_MAINTENANCE=0
+VERSION_PATCH=0
+BASE_VERSION=pc6.0.0.524
+VERSION_STR=$VERSION_MAJOR.$VERSION_MINOR.$VERSION_MAINTENANCE.$VERSION_PATCH
+BUILD_DATE=$(date +"%Y%m%d")
+BUILD_DATE_LONG=$(date +"%Y%m%d%H%M")
+
+# Dependencies used by Makefile.xlib
+if [ "$XLIB_DESTINY_BUILD_ARTIFACTS_ZIP_FILE" == "" ]; then
+	XLIB_DESTINY_BUILD_ARTIFACTS_ZIP_FILE=S:/build/release_artifacts/Platform/5.5.1.0/ControlCenterServer-5.5.1-67-bin.zip
+	
+	xlib_policy_adaptor_sdk_zip_file=Z:/build/pcv/PolicyAdapterSDK/6.0.0.524/37PS_javasdk/PolicyAdapterSDK-6.0.0.524-37PS_javasdk-20130228.zip
+fi
+
+XLIB_POLICY_ADAPTOR_SDK_ZIP_FILE=S:/build/pcv/PolicyAdapterSDK/6.0.0.524/37PS_javasdk/PolicyAdapterSDK-6.0.0.524-37PS_javasdk-20130228.zip
+JAVA_SDK_ARTIFACTS_BIN_ZIP_FILE=S:/build/pcv/artifacts/Fate/6.0.0.524/54PS_javasdk/fate-6.0.0.524-54PS_javasdk-pcv-20130313-bin.zip
+
+# Distribution package
+PACKAGE_FILE_NAME=$PROJECT_NAME-$VERSION_STR-$VERSION_BUILD_SHORT-$CUSTOMER-base-$VERSION_BASE-${BUILD_DATE}.zip
+
+# Locations used by Makefile.publish
+REPOSITORY_ROOT="s:/build/custom"
+SYNC_FOLDER_ROOT="s:/global/Us2Cdc/engineering"
+
+
+#
+# Generate build.config
+#
+
+# Write file
+
+(
+cat <<EOT
+#!/bin/bash
+#
+# DESCRIPTION
+#	This script setup variables to be used by build/Makefile.xlib, buildMakefile.compile, 
+#	build/Makefile.publish. It is also be used to setup environment for manual compilation. 
+#	It is especially help in setting up envoironment for incremental build.
+#
+# WARNING
+#	This file is generated by ./configure. You may edit this file for debugging purpose
+#	but changes will be overriden by ./configure.
+
+export CUSTOMER="$CUSTOMER"
+export PROJECT_NAME="$PROJECT_NAME"
+export PACKAGE_NAME="$PACKAGE_NAME"
+export VERSION_PRODUCT="$VERSION_PRODUCT"
+export VERSION_MAJOR="$VERSION_MAJOR"
+export VERSION_MINOR="$VERSION_MINOR"
+export VERSION_MAINTENANCE="$VERSION_MAINTENANCE"
+export VERSION_PATCH="$VERSION_PATCH"
+export VERSION_STR="$VERSION_STR"
+export VERSION_BUILD="$VERSION_BUILD"
+export VERSION_BUILD_SHORT="$VERSION_BUILD_SHORT"
+export VERSION_BASE="$VERSION_BASE"
+export BUILD_NUMBER="$BUILD_NUMBER"
+export BUILD_DATE="$BUILD_DATE"
+export BUILD_DATE_LONG="$BUILD_DATE_LONG"
+
+export XLIB_DESTINY_BUILD_ARTIFACTS_ZIP_FILE=$XLIB_DESTINY_BUILD_ARTIFACTS_ZIP_FILE
+
+export PACKAGE_FILE_NAME=$PACKAGE_FILE_NAME
+
+export REPOSITORY_ROOT="$REPOSITORY_ROOT"
+export SYNC_FOLDER_ROOT="$SYNC_FOLDER_ROOT"
+
+export NLPROJECTROOT="$NLPROJECTROOT"
+export NLEXTERNALDIR="$NLEXTERNALDIR"
+export NLPROFSERVDIR="$NLPROFSERVDIR"
+
+export CONFIG_TYPE="$CONFIG_TYPE"
+export BUILDTYPE="$BUILDTYPE"
+export PREFAST="$PREFAST"
+export OFFICIALCERT="$OFFICIALCERT"
+
+export MAKE_CFLAGS_32="$MAKE_CFLAGS_32"
+export MAKE_CFLAGS_64="$MAKE_CFLAGS_64"
+export MAKE_CSFLAGS="$MAKE_CSFLAGS"
+export MAKE_INSTALLFLAGS="$MAKE_INSTALLFLAGS"
+EOT
+) > build.config
+
+# Print content of build.config
+echo ""
+echo "INFO: build.config"
+
+cat build.config
+
+#
+# Generate scripts/build.properties
+#
+
+# Write file
+
+rm -f scripts/build.properties
+(
+cat <<EOT
+# ---------------------------------------------------------------------------
+# Configurable build properties
+#
+# Description:
+#	The properties in this file are configurable properties. They should be updated 
+#	according to the environment and release version. The properties should are used
+#	by build_xlib.xml, build_compile.xml and build_publish.xml. This property file
+#	should contain all the properties to run any of these Ant scripts. If any 
+#	configurable property is missing, it should be added to this script.
+#
+#	Note that this script should not contain any property that acts a local variable
+#	to a build.xml file. Those should be specified in the build.xml file using
+#	<properties> tag.
+#
+#	For developer:
+#		The values specified in this property file need to be adjusted in order for 
+#		you to compile code in you development environment using build_compile.xml. 
+#		Since this property file contains all configurable properties needed to
+#		build a source tree, you should be able to build after updating this file.
+#		You may compile using compileIt.bat or run Ant at a command prompt.
+#
+#	For build machine:
+#		To perform scripted build, we may generate this build.properties file
+#		on-the-fly or use Ant commandline to override the properties. Ant commandline
+#		can be specified through environment varibale ANT_ARGS. In either case, specify
+#		-D<name>=<value> to override a property.
+# ---------------------------------------------------------------------------
+
+# Source and libraries
+nlbuildroot=$NLBUILDROOT
+nlexternaldir=$NLEXTERNALDIR
+
+# Xlib (Destiny and Fate build artifacts)
+xlib_policy_adaptor_sdk_zip_file=$XLIB_POLICY_ADAPTOR_SDK_ZIP_FILE
+java_sdk_artifacts_bin_zip_file=$JAVA_SDK_ARTIFACTS_BIN_ZIP_FILE
+
+# Build variables
+product_name=$PRODUCT_NAME
+package_name=$PACKAGE_NAME
+version_str=$VERSION_STR
+build_number=$BUILD_NUMBER
+version_build_short=$VERSION_BUILD_SHORT
+build_date_long=$BUILD_DATE_LONG
+repository_root=$REPOSITORY_ROOT
+base_version=$BASE_VERSION
+EOT
+) > scripts/build.properties
+
+# Print content of scripts/build.properties
+echo ""
+echo "INFO: scripts/build.properties"
+
+cat scripts/build.properties

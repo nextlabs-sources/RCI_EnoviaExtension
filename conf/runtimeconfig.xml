@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<runtime-configuration>
+	<policy-controller-attributes>
+		<attribute>
+			<type>Part</type>
+			<baseattr>type</baseattr>
+			<baseattr>name</baseattr>
+			<baseattr>vault</baseattr>
+			<customattr>IPC-Type</customattr>
+			<customattr>IPC-Data</customattr>
+			<customattr>revision</customattr>
+			<customattr>nxl_Access_Classification</customattr>
+		</attribute>
+		<attribute>
+			<type>CAD Drawing</type>
+			<baseattr>type</baseattr>
+			<baseattr>name</baseattr>
+			<baseattr>vault</baseattr>
+			<customattr></customattr>
+		</attribute>
+	</policy-controller-attributes>
+	
+	<inheritance-list>
+		<inheritance>
+			<name>Part Specification</name>
+			<from-type>Part</from-type>
+			<to-type>CAD Drawing</to-type>
+			<relationship>to</relationship>
+		</inheritance>
+		<inheritance>
+			<name>EBOM</name>
+			<from-type>Part</from-type>
+			<to-type>Part</to-type>
+			<relationship>to</relationship>
+		</inheritance>
+	</inheritance-list>
+	
+	<!-- Enovia Extension: Sample -->
+	<!--<extensions>
+		<extension>
+			<extension-type>NextLabsEnoviaEMAttributeExtension</extension-type>
+			<class>com.nextlabs.enovia.extension.impl.RCICADModelExtension</class>
+			<business-object-type>CAD Model</business-object-type>
+		</extension>
+	</extensions>-->
+	
+	<policy-controller>
+		<host>10.23.57.90</host>
+		<appname>Engineering Central</appname>
+		<timeout>10000</timeout>
+		<default-action>allow</default-action>
+		<default-message>PDP connection timeout</default-message>
+		<connect-retry-count>5</connect-retry-count>
+		<connect-retry-timer>100000</connect-retry-timer>
+	</policy-controller>
+	
+	<system>
+		<config-reload-interval>36000</config-reload-interval>
+	</system>
+	
+</runtime-configuration>
